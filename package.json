@@ -1,0 +1,27 @@
+{
+  "name": "pywebapp-bridge",
+  "version": "1.0.0",
+  "description": "Universal IPC bridge for PyWebApp — JS ↔ Python communication across Android, Desktop, and Web.",
+  "main": "src/index.js",
+  "module": "src/index.js",
+  "type": "module",
+  "keywords": [
+    "pywebapp",
+    "bridge",
+    "ipc",
+    "cross-platform",
+    "android",
+    "desktop",
+    "python",
+    "react"
+  ],
+  "author": "Sonu Vishwakarma <sonuportfolio77@gmail.com>",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/SonuSV7719/pywebapp-bridge.git"
+  },
+  "files": [
+    "src/"
+  ]
+}
