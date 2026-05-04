@@ -102,11 +102,21 @@ export async function pickImage() {
 
 /**
  * Utility: Pick ANY file from the system (Universal).
+ * Returns absolute file path on Android and Desktop to support massive files.
  */
 export async function pickFile() {
   const platform = detectPlatform();
   if (platform === 'android') {
-    return launchIntent('android.intent.action.GET_CONTENT', '*/*');
+    const result = await launchIntent('android.intent.action.GET_CONTENT', '*/*');
+    if (result.success && result.uri) {
+      // Resolve content:// URI to absolute file path by caching it
+      return new Promise((resolve, reject) => {
+        const callbackId = getNextCallbackId();
+        pendingCallbacks.set(callbackId, { resolve, reject });
+        window.NativeBridge.cacheUriToFile(result.uri, callbackId);
+      });
+    }
+    return result;
   } else if (platform === 'desktop') {
     const jsonResult = await window.pywebview.api.pickFile("Select File", ["All files (*.*)"]);
     return JSON.parse(jsonResult);
@@ -116,7 +126,8 @@ export async function pickFile() {
       input.type = 'file';
       input.onchange = (e) => {
         const file = e.target.files[0];
-        if (file) resolve({ success: true, uri: URL.createObjectURL(file), name: file.name });
+        // Web only gets a blob URI, not a hard drive path due to sandboxing
+        if (file) resolve({ success: true, uri: URL.createObjectURL(file), path: null, name: file.name });
         else resolve({ success: false, error: 'Cancelled' });
       };
       input.click();

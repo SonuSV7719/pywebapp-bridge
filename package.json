@@ -1,6 +1,6 @@
 {
   "name": "pywebapp-bridge",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "description": "Universal IPC bridge for PyWebApp — JS ↔ Python communication across Android, Desktop, and Web.",
   "main": "src/index.js",
   "module": "src/index.js",
