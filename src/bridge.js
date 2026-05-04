@@ -45,6 +45,9 @@ export function detectPlatform() {
   if (window.NativeBridge) {
     return 'android';
   }
+  if (window.__PYWEBAPP_API_URL__) {
+    return 'web';
+  }
   return 'dev';
 }
 
@@ -80,8 +83,17 @@ export async function call(method, params = []) {
       const jsonParams = JSON.stringify(params);
       const jsonResult = await window.pywebview.api.dispatch(method, jsonParams);
       response = JSON.parse(jsonResult);
+    } else if (platform === 'web') {
+      // HTTP transport — communicates with the Python Flask server
+      const apiUrl = window.__PYWEBAPP_API_URL__ || '/api/dispatch';
+      const res = await fetch(apiUrl, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ method, params }),
+      });
+      response = await res.json();
     } else {
-      // Mock for web development
+      // Mock for web development (no server running)
       await new Promise(r => setTimeout(r, 100));
       const handler = MOCK_HANDLERS[method];
       if (handler) {
