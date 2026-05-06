@@ -4,6 +4,7 @@
  * Abstracts the platform-specific communication layer:
  *   - Desktop (pywebview): Uses window.pywebview.api.call()
  *   - Android (Chaquopy):  Uses window.NativeBridge.call() + callback
+ *   - Web (Flask):         Uses fetch() to /api/dispatch
  *   - Dev mode:            Uses mock responses for UI development
  *
  * Usage:
@@ -14,9 +15,16 @@
 
 import { MOCK_HANDLERS } from './mock.js';
 
-// Pending callback registry for Android async responses
-const pendingCallbacks = new Map();
+// Pending callback registry for Android async responses (shared with native.js)
+export const pendingCallbacks = new Map();
 let callbackIdCounter = 0;
+
+/**
+ * Get the next unique callback ID. Exported for native.js to share the counter.
+ */
+export function getNextCallbackId() {
+  return `cb_${++callbackIdCounter}`;
+}
 
 /**
  * Resolve a pending Android callback.
@@ -53,7 +61,7 @@ export function detectPlatform() {
 
 /**
  * Generic IPC: Call a Python method from Javascript.
- * Works across Android (Chaquopy), Desktop (pywebview), and Web (Mock).
+ * Works across Android (Chaquopy), Desktop (pywebview), Web (Flask), and Dev (Mock).
  */
 export async function call(method, params = []) {
   const platform = detectPlatform();
@@ -65,15 +73,28 @@ export async function call(method, params = []) {
     let response;
     
     if (platform === 'android') {
-      // Async bridge with callback registry
-      return new Promise((resolve, reject) => {
-        const callbackId = `call_${++callbackIdCounter}`;
-        pendingCallbacks.set(callbackId, { resolve, reject });
+      // Async bridge with callback registry and timeout
+      response = await new Promise((resolve, reject) => {
+        const callbackId = getNextCallbackId();
+        
+        // 🔒 P1: 30-second timeout to prevent hanging promises
+        const timeout = setTimeout(() => {
+          if (pendingCallbacks.has(callbackId)) {
+            pendingCallbacks.delete(callbackId);
+            reject(new Error(`Android IPC timeout for method '${method}'`));
+          }
+        }, 30000);
+
+        pendingCallbacks.set(callbackId, {
+          resolve: (val) => { clearTimeout(timeout); resolve(val); },
+          reject: (err) => { clearTimeout(timeout); reject(err); },
+        });
         
         try {
           const jsonParams = JSON.stringify(params);
           window.NativeBridge.call(method, jsonParams, callbackId);
         } catch (e) {
+          clearTimeout(timeout);
           pendingCallbacks.delete(callbackId);
           reject(e);
         }
@@ -117,83 +138,6 @@ export async function call(method, params = []) {
 }
 
 /**
- * Desktop (pywebview) — Direct Python call via js_api.
- */
-async function callDesktop(method, params) {
-  try {
-    const paramsJson = JSON.stringify(params);
-    const resultJson = await window.pywebview.api.call(method, paramsJson);
-    return typeof resultJson === 'string' ? JSON.parse(resultJson) : resultJson;
-  } catch (err) {
-    console.error('[Bridge] Desktop call error:', err);
-    return {
-      success: false,
-      error: `Desktop bridge error: ${err.message}`,
-      method,
-    };
-  }
-}
-
-/**
- * Android (Chaquopy) — JavascriptInterface call with callback Promise.
- */
-function callAndroid(method, params) {
-  return new Promise((resolve, reject) => {
-    const callbackId = `cb_${++callbackIdCounter}`;
-    pendingCallbacks.set(callbackId, { resolve, reject });
-
-    // Set a timeout to prevent hanging if callback never fires
-    const timeout = setTimeout(() => {
-      if (pendingCallbacks.has(callbackId)) {
-        pendingCallbacks.delete(callbackId);
-        reject(new Error(`Android IPC timeout for method '${method}'`));
-      }
-    }, 30000); // 30 second timeout
-
-    // Store timeout handle so it can be cleared on success
-    const original = pendingCallbacks.get(callbackId);
-    pendingCallbacks.set(callbackId, {
-      resolve: (val) => {
-        clearTimeout(timeout);
-        original.resolve(val);
-      },
-      reject: (err) => {
-        clearTimeout(timeout);
-        original.reject(err);
-      },
-    });
-
-    try {
-      const paramsJson = JSON.stringify(params);
-      window.NativeBridge.call(method, paramsJson, callbackId);
-    } catch (err) {
-      clearTimeout(timeout);
-      pendingCallbacks.delete(callbackId);
-      reject(new Error(`Android bridge error: ${err.message}`));
-    }
-  });
-}
-
-/**
- * Dev mode — Returns mock data with simulated latency.
- */
-async function callMock(method, params) {
-  // Simulate network-like latency
-  await new Promise((r) => setTimeout(r, 300 + Math.random() * 200));
-
-  const handler = MOCK_HANDLERS[method];
-  if (handler) {
-    return handler(params);
-  }
-
-  return {
-    success: false,
-    error: `[Dev Mock] Unknown method: '${method}'`,
-    method,
-  };
-}
-
-/**
  * Utility: Check if the native bridge is ready.
  */
 export function isBridgeReady() {
@@ -205,12 +149,4 @@ export function isBridgeReady() {
  */
 export function getPlatform() {
   return detectPlatform();
-}
-
-// Export pendingCallbacks and callbackIdCounter for use by native.js
-export { pendingCallbacks, callbackIdCounter };
-
-// Mutable counter export workaround
-export function getNextCallbackId() {
-  return `native_${++callbackIdCounter}`;
 }

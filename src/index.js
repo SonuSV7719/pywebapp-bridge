@@ -14,6 +14,7 @@ export { call, detectPlatform, isBridgeReady, getPlatform } from './bridge.js';
 export { 
   getSystemEnv,
   requestPermission,
+  PERMISSIONS,
   pickImage,
   pickFile,
   openCamera,

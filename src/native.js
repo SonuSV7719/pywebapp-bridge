@@ -1,32 +1,9 @@
 /**
  * Native platform APIs — pickImage, pickFile, openCamera, launchIntent, shareText, showToast.
- * Exact same logic from the original bridge.js, extracted into its own module.
+ * Uses the shared callback registry from bridge.js for unified callback resolution.
  */
 
-import { detectPlatform, getNextCallbackId } from './bridge.js';
-
-// Shared callback registry (same instance as bridge.js uses via window.__resolveCallback)
-const pendingCallbacks = new Map();
-
-// Hook into the global callback resolver
-const originalResolver = window.__resolveCallback;
-window.__resolveCallback = (callbackId, resultJson) => {
-  // Check our local pending callbacks first
-  const resolver = pendingCallbacks.get(callbackId);
-  if (resolver) {
-    try {
-      const result = typeof resultJson === 'string' ? JSON.parse(resultJson) : resultJson;
-      resolver.resolve(result);
-    } catch (e) {
-      resolver.reject(new Error(`Failed to parse callback result: ${e.message}`));
-    }
-    pendingCallbacks.delete(callbackId);
-  }
-  // Also call original resolver (for bridge.js call() callbacks)
-  if (originalResolver) {
-    originalResolver(callbackId, resultJson);
-  }
-};
+import { detectPlatform, getNextCallbackId, pendingCallbacks } from './bridge.js';
 
 /**
  * Utility: Get system environment from native host.
@@ -45,6 +22,27 @@ export async function getSystemEnv() {
     isMock: true
   };
 }
+
+/**
+ * Android Permission Constants (Catalog for Autocomplete)
+ */
+export const PERMISSIONS = {
+  CAMERA: 'android.permission.CAMERA',
+  LOCATION: 'android.permission.ACCESS_FINE_LOCATION',
+  LOCATION_COARSE: 'android.permission.ACCESS_COARSE_LOCATION',
+  LOCATION_BACKGROUND: 'android.permission.ACCESS_BACKGROUND_LOCATION',
+  STORAGE_READ: 'android.permission.READ_EXTERNAL_STORAGE',
+  STORAGE_WRITE: 'android.permission.WRITE_EXTERNAL_STORAGE',
+  READ_MEDIA_IMAGES: 'android.permission.READ_MEDIA_IMAGES',
+  READ_MEDIA_VIDEO: 'android.permission.READ_MEDIA_VIDEO',
+  READ_MEDIA_AUDIO: 'android.permission.READ_MEDIA_AUDIO',
+  MICROPHONE: 'android.permission.RECORD_AUDIO',
+  CONTACTS_READ: 'android.permission.READ_CONTACTS',
+  SMS_SEND: 'android.permission.SEND_SMS',
+  POST_NOTIFICATIONS: 'android.permission.POST_NOTIFICATIONS',
+  BLUETOOTH_SCAN: 'android.permission.BLUETOOTH_SCAN',
+  BLUETOOTH_CONNECT: 'android.permission.BLUETOOTH_CONNECT',
+};
 
 /**
  * Utility: Request an Android permission dynamically.
